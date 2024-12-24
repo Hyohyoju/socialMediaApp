@@ -10,7 +10,7 @@ import PhotosUI
 import Firebase
 import FirebaseAuth
 import FirebaseStorage
-import FirebaseStorage
+import FirebaseFirestore
 
 struct LoginView: View {
     // MARK: - USER DETAILS
@@ -241,6 +241,7 @@ struct RegisterView: View {
                     .hAlign(.center)
                     .fillView(.black)
             }
+            .disableWithOpacity(userName == "" || userBio == "" || emailID == "" || password == "" || userProfilePicData == nil)
             .padding(.top, 10)
         }
     }
@@ -259,8 +260,17 @@ struct RegisterView: View {
                 let downloadURL = try await storageRef.downloadURL()
                 // STEP 4: Creating a User Firestore Object
                 let user = User(username: userName, userBio: userBio, userBioLink: userBioLink, userUID: userUID, userEmail: emailID, userProfileURL: downloadURL)
-                
+                // Step 5: Saving User Doc into Firestore Database
+                let _ = try Firestore.firestore().collection("Users").document(userUID).setData(from: user, completion: {
+                    error in
+                    if error == nil {
+                        // MARK: Print Saved Successfully
+                        print("Saved Successfully")
+                    }
+                })
             } catch {
+                // MARK: Deleting Created Account In Case of Failure
+                try await Auth.auth().currentUser?.delete()
                 await setError(error)
             }
         }
@@ -282,6 +292,13 @@ struct RegisterView: View {
 
 // MARK: - VIEW EXTENSION FOR UI BUILIDING
 extension View {
+    // MARK: Disabling with Opacity
+    func disableWithOpacity(_ condition: Bool)-> some View {
+        self
+            .disabled(condition)
+            .opacity(condition ? 0.6 : 1)
+    }
+    
     func hAlign(_ alignment: Alignment) -> some View {
         self
             .frame(maxWidth: .infinity, alignment: alignment)

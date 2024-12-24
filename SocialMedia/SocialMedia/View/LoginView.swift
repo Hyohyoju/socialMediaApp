@@ -7,6 +7,10 @@
 
 import SwiftUI
 import PhotosUI
+import Firebase
+import FirebaseAuth
+import FirebaseStorage
+import FirebaseStorage
 
 struct LoginView: View {
     // MARK: - USER DETAILS
@@ -14,6 +18,8 @@ struct LoginView: View {
     @State var password: String = ""
     // MARK: - View Properties
     @State var createAccount: Bool = false
+    @State var showError: Bool = false
+    @State var errorMessage: String = ""
     
     // MARK: - Body
     var body: some View {
@@ -37,15 +43,13 @@ struct LoginView: View {
                     .textContentType(.emailAddress)
                     .border(1, .gray.opacity(0.5))
                 
-                Button("Reset password?", action: {})
+                Button("Reset password?", action: resetPassword)
                     .font(.callout)
                     .fontWeight(.medium)
                     .tint(.black)
                     .hAlign(.trailing)
                 
-                Button {
-                    
-                } label: {
+                Button(action: loginUser) {
                     // MARK: - LOGIN BUTTON
                     Text("Sign in")
                         .foregroundColor(.white)
@@ -75,9 +79,41 @@ struct LoginView: View {
         .fullScreenCover(isPresented: $createAccount) {
             RegisterView()
         }
+        // Displaying Alert
+        .alert(errorMessage, isPresented: $showError, actions: {})
+    }
+    
+    func loginUser() {
+        Task {
+            do {
+                try await Auth.auth().signIn(withEmail: emailID, password: password)
+                print("User Found")
+            } catch {
+                await setError(error)
+            }
+        }
+    }
+    
+    func resetPassword() {
+        Task {
+            do {
+                try await Auth.auth().sendPasswordReset(withEmail: emailID)
+                print("Link Sent")
+            } catch {
+                await setError(error)
+            }
+        }
+    }
+    
+    // MARK: Displaying Errors VIA Alert
+    func setError(_ error: Error) async {
+        // MARK: UI Must be Updated on Main Thread
+        await MainActor.run(body: {
+            errorMessage = error.localizedDescription
+            showError.toggle()
+        })
     }
 }
-
 
 // MARK: REGISTER VIEW
 struct RegisterView: View {
@@ -93,6 +129,8 @@ struct RegisterView: View {
     @Environment(\.dismiss) var dismiss
     @State var showImagePicker: Bool = false
     @State var photoItem: PhotosPickerItem?
+    @State var showError: Bool = false
+    @State var errorMessage: String = ""
     
     // MARK: - BODY
     var body: some View {
@@ -147,6 +185,8 @@ struct RegisterView: View {
                 }
             }
         }
+        // MARK: Displaying Alert
+        .alert(errorMessage, isPresented: $showError, actions: {})
     }
     
     @ViewBuilder
@@ -194,9 +234,7 @@ struct RegisterView: View {
                 .textContentType(.emailAddress)
                 .border(1, .gray.opacity(0.5))
             
-            Button {
-                
-            } label: {
+            Button(action: registerUser) {
                 // MARK: - LOGIN BUTTON
                 Text("Sign up")
                     .foregroundColor(.white)
@@ -205,6 +243,36 @@ struct RegisterView: View {
             }
             .padding(.top, 10)
         }
+    }
+    
+    func registerUser() {
+        Task {
+            do {
+                // Step 1: Creating Firebase Account
+                try await Auth.auth().createUser(withEmail: emailID, password: password)
+                // Step 2: Uploading Profile Photo Into Firebase Storage
+                guard let userUID = Auth.auth().currentUser?.uid else { return }
+                guard let imageData = userProfilePicData else { return }
+                let storageRef = Storage.storage().reference().child("Profile_Images").child(userUID)
+                let _ = try await storageRef.putDataAsync(imageData)
+                // Step 3: Downloading Photo URL
+                let downloadURL = try await storageRef.downloadURL()
+                // STEP 4: Creating a User Firestore Object
+                let user = User(username: userName, userBio: userBio, userBioLink: userBioLink, userUID: userUID, userEmail: emailID, userProfileURL: downloadURL)
+                
+            } catch {
+                await setError(error)
+            }
+        }
+    }
+    
+    // MARK: Displaying Errors VIA Alert
+    func setError(_ error: Error) async {
+        // MARK: UI Must be Updated on Main Thread
+        await MainActor.run(body: {
+            errorMessage = error.localizedDescription
+            showError.toggle()
+        })
     }
 }
 
